@@ -1,21 +1,13 @@
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
-
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::RECT;
-
-#[cfg(target_os = "windows")]
-use windows_sys::Win32::UI::WindowsAndMessaging::{SystemParametersInfoW, SPI_GETWORKAREA};
+use tauri::Manager;
 
 pub mod modules;
-
-// Re-export modules for easier access
-pub use modules::{chat_watcher, commands, keyboard, system, webview, window};
+pub mod setup;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(target_os = "windows")]
-    if !system::is_elevated() {
-        system::restart_as_admin();
+    if !modules::services::window::windows::is_elevated() {
+        modules::services::window::windows::restart_as_admin();
     }
 
     tauri::Builder::default()
@@ -27,7 +19,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
-       .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = app
                 .get_webview_window("main")
                 .expect("no main window")
@@ -35,126 +27,20 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_app_exit::init())
-        .setup(|app| {
-            let _handle = app.app_handle();
-
-            #[cfg(target_os = "windows")]
-            let (x, y, width, height) = {
-                // Get appropriate bounds based on Diablo focus state
-                if let Some(rect) = window::get_appropriate_window_bounds(app.app_handle()) {
-                    (
-                        rect.x as f64,
-                        rect.y as f64,
-                        rect.width as f64,
-                        rect.height as f64,
-                    )
-                } else {
-                    // Fallback to work area
-                    let mut work_area = RECT {
-                        left: 0,
-                        top: 0,
-                        right: 0,
-                        bottom: 0,
-                    };
-                    unsafe {
-                        SystemParametersInfoW(
-                            SPI_GETWORKAREA,
-                            0,
-                            &mut work_area as *mut _ as *mut _,
-                            0,
-                        );
-                    }
-                    let width = (work_area.right - work_area.left) as f64;
-                    let height = (work_area.bottom - work_area.top) as f64;
-                    let x = work_area.left as f64;
-                    let y = work_area.top as f64;
-                    (x, y, width, height)
-                }
-            };
-
-            #[cfg(not(target_os = "windows"))]
-            let (x, y, width, height) = {
-                if let Some(rect) = window::get_appropriate_window_bounds(app.app_handle()) {
-                    (
-                        rect.x as f64,
-                        rect.y as f64,
-                        rect.width as f64,
-                        rect.height as f64,
-                    )
-                } else {
-                    let monitor = app.primary_monitor().unwrap();
-                    if let Some(monitor) = monitor {
-                        let size = monitor.size();
-                        let position = monitor.position();
-                        (
-                            position.x as f64,
-                            position.y as f64,
-                            size.width as f64,
-                            size.height as f64,
-                        )
-                    } else {
-                        println!("Warning: No primary monitor detected. using default bounds.");
-                        (0.0, 0.0, 1920.0, 1080.0)
-                    }
-                }
-            };
-
-            let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                .title("PD2 Trader")
-                .inner_size(width, height)
-                .position(x, y)
-                .decorations(false)
-                .transparent(true)
-                .visible(true)
-                .focused(true)
-                .shadow(false)
-                .always_on_top(true)
-                .skip_taskbar(true);
-
-            let main_window = win_builder.build().unwrap();
-            let _ = main_window.set_ignore_cursor_events(true);
-            
-            // Create toast window
-            let _toast_window = WebviewWindowBuilder::new(app, "toast", WebviewUrl::App("toast".into()))
-                .title("PD2 Trader - Toast")
-                .inner_size(400.0, 200.0)
-                .decorations(false)
-                .transparent(true)
-                .visible(false)
-                .shadow(false)
-                .always_on_top(true)
-                .skip_taskbar(true)
-                .focusable(false)
-                .build()
-                .unwrap();
-            
-            // Position the toast window initially
-            
-            // Initialize event-driven foreground monitoring
-            let app_handle = app.app_handle().clone();
-            let _ = commands::reposition_toast_window(app_handle.clone());
-            window::initialize_foreground_monitoring(move || {
-                let _ = commands::update_window_bounds(app_handle.clone());
-                let _ = commands::reposition_toast_window(app_handle.clone());
-            });
-            
-            #[cfg(debug_assertions)]
-            main_window.open_devtools();
-            Ok(())
-        })
+        .setup(setup::init)
         .invoke_handler(tauri::generate_handler![
-            commands::get_diablo_rect,
-            commands::press_key,
-            commands::is_diablo_focused,
-            commands::open_project_diablo2_webview,
-            commands::update_window_bounds,
-            commands::set_window_click_through,
-            commands::force_window_focus,
-            commands::reposition_toast_window,
-            commands::start_chat_watcher,
-            commands::stop_chat_watcher,
-            commands::get_diablo2_directory,
-            commands::auto_detect_diablo2_directory
+            modules::commands::get_diablo_rect,
+            modules::commands::press_key,
+            modules::commands::is_diablo_focused,
+            modules::commands::open_project_diablo2_webview,
+            modules::commands::update_window_bounds,
+            modules::commands::set_window_click_through,
+            modules::commands::force_window_focus,
+            modules::commands::reposition_toast_window,
+            modules::commands::start_chat_watcher,
+            modules::commands::stop_chat_watcher,
+            modules::commands::get_diablo2_directory,
+            modules::commands::auto_detect_diablo2_directory
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

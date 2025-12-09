@@ -1,4 +1,7 @@
-use crate::{chat_watcher, keyboard, window};
+use crate::modules::services::chat::ChatService;
+use crate::modules::services::input::InputService;
+use crate::modules::services::window::{PlatformWindowService, traits::WindowService};
+use crate::modules::core::types::WindowRect;
 use tauri::Manager;
 
 #[tauri::command]
@@ -7,39 +10,35 @@ pub fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-pub fn get_diablo_rect(app_handle: tauri::AppHandle) -> Option<window::WindowRect> {
-    #[cfg(target_os = "windows")]
-    {
-        window::get_diablo_rect()
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        window::get_diablo_rect(&app_handle)
-    }
+pub fn get_diablo_rect(app_handle: tauri::AppHandle) -> Option<WindowRect> {
+    let service = PlatformWindowService;
+    service.get_diablo_rect(&app_handle)
 }
 
 #[tauri::command]
 pub fn press_key(sequence: String) -> Result<(), String> {
-    keyboard::press_key(sequence)
+    InputService::press_key(sequence)
 }
 
 #[tauri::command]
 pub fn is_diablo_focused() -> bool {
-    window::is_diablo_focused()
+    let service = PlatformWindowService;
+    service.is_diablo_focused()
 }
 
 #[tauri::command]
 pub async fn open_project_diablo2_webview(app_handle: tauri::AppHandle) -> Result<(), String> {
     // Spawn a new thread to avoid deadlocks on Windows
     std::thread::spawn(move || {
-        let _ = crate::webview::open_project_diablo2_webview(app_handle);
+        let _ = crate::modules::webview::open_project_diablo2_webview(app_handle);
     });
     Ok(())
 }
 
 #[tauri::command]
 pub fn update_window_bounds(app_handle: tauri::AppHandle) -> Result<(), String> {
-    if let Some(bounds) = window::get_appropriate_window_bounds(&app_handle) {
+    let service = PlatformWindowService;
+    if let Some(bounds) = service.get_appropriate_window_bounds(&app_handle) {
         if let Some(main_window) = app_handle.get_webview_window("main") {
             let _ = main_window.set_position(tauri::PhysicalPosition::new(bounds.x as f64, bounds.y as f64));
             let _ = main_window.set_size(tauri::PhysicalSize::new(bounds.width as f64, bounds.height as f64));
@@ -80,8 +79,9 @@ pub fn force_window_focus(app_handle: tauri::AppHandle) -> Result<(), String> {
 pub fn reposition_toast_window(app_handle: tauri::AppHandle) -> Result<(), String> {
     use tauri::{PhysicalPosition, PhysicalSize};
 
+    let service = PlatformWindowService;
     // Get bounds of the focused area (Diablo or work area)
-    let bounds = window::get_appropriate_window_bounds(&app_handle)
+    let bounds = service.get_appropriate_window_bounds(&app_handle)
         .ok_or("Could not get window bounds")?;
 
     // Toast window size
@@ -105,23 +105,22 @@ pub fn reposition_toast_window(app_handle: tauri::AppHandle) -> Result<(), Strin
 
 #[tauri::command]
 pub fn start_chat_watcher(app_handle: tauri::AppHandle, custom_d2_dir: Option<String>) -> Result<(), String> {
-
-    chat_watcher::start_watching(app_handle, custom_d2_dir)
+    ChatService::start_watching(app_handle, custom_d2_dir)
 }
 
 #[tauri::command]
 pub fn stop_chat_watcher() -> Result<(), String> {
-    chat_watcher::stop_watching()
+    ChatService::stop_watching()
 }
 
 #[tauri::command]
 pub fn get_diablo2_directory(custom_path: Option<String>) -> Option<String> {
-    chat_watcher::find_diablo2_directory(custom_path.as_deref())
+    ChatService::find_diablo2_directory(custom_path.as_deref())
         .and_then(|p| p.to_str().map(|s| s.to_string()))
 }
 
 #[tauri::command]
 pub fn auto_detect_diablo2_directory() -> Option<String> {
-    chat_watcher::auto_detect_diablo2_directory()
+    ChatService::find_diablo2_directory(None)
         .and_then(|p| p.to_str().map(|s| s.to_string()))
 }

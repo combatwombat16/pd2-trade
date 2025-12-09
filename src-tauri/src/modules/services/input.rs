@@ -1,0 +1,85 @@
+use enigo::{Direction, Enigo, Key, Keyboard, Settings};
+
+pub struct InputService;
+
+impl InputService {
+    pub fn str_to_keys(seq: &str) -> Result<(Vec<Key>, Key), String> {
+        let mut mods = Vec::<Key>::new();
+        let mut main: Option<Key> = None;
+
+        // println!("[str_to_keys] Parsing sequence: {}", seq);
+
+        for part in seq.split('+') {
+            match part.to_ascii_lowercase().as_str() {
+                "ctrl" | "control" => {
+                    mods.push(Key::Control);
+                }
+                "alt" => {
+                    mods.push(Key::Alt);
+                }
+                "shift" => {
+                    mods.push(Key::Shift);
+                }
+                "cmd" | "command" => {
+                    mods.push(Key::Meta);
+                }
+                k if k.len() == 1 => {
+                    let ch = k.chars().next().unwrap();
+                    main = Some(Key::Unicode(ch));
+                }
+                k if k.starts_with('f') && k.len() <= 3 => {
+                    if let Ok(n) = k[1..].parse::<u8>() {
+                        main = Some(match n {
+                            1 => Key::F1,
+                            2 => Key::F2,
+                            3 => Key::F3,
+                            4 => Key::F4,
+                            5 => Key::F5,
+                            6 => Key::F6,
+                            7 => Key::F7,
+                            8 => Key::F8,
+                            9 => Key::F9,
+                            10 => Key::F10,
+                            11 => Key::F11,
+                            12 => Key::F12,
+                            _ => {
+                                return Err(format!("Unsupported function key: F{}", n));
+                            }
+                        });
+                    }
+                }
+                _ => {
+                    return Err(format!("Unsupported fragment: {part}"));
+                }
+            }
+        }
+
+        let main = main.ok_or_else(|| "No main key found".to_string())?;
+
+        Ok((mods, main))
+    }
+
+    pub fn press_key(sequence: String) -> Result<(), String> {
+        // println!("[press_key] Received sequence: {}", sequence);
+
+        let (mods, main) = Self::str_to_keys(&sequence)?;
+        let mut enigo =
+            Enigo::new(&Settings::default()).map_err(|e| format!("Failed to init Enigo: {:?}", e))?;
+
+        for m in &mods {
+            enigo.key(*m, Direction::Press).map_err(|e| e.to_string())?;
+        }
+
+        enigo
+            .key(main, Direction::Click)
+            .map_err(|e| e.to_string())?;
+
+        for m in mods.iter().rev() {
+            enigo
+                .key(*m, Direction::Release)
+                .map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+}

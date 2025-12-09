@@ -1,6 +1,4 @@
-pub mod chat_watcher;
 pub mod commands;
-pub mod keyboard;
-pub mod system;
+pub mod core;
+pub mod services;
 pub mod webview;
-pub mod window;
